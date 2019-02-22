@@ -25,7 +25,7 @@ def _sld(a, b, p):
 	│           ^        │	If ABCD is a square from 0,0 to 1,1,
 	│           │        │  and a P is the middle,
 	│     P     │        │  then the _sdl of each next vertex in
-	│	        │        │	anti-clockwise manner will result in
+	│           │        │	anti-clockwise manner will result in
 	v           │        │	_sdl(v1, v2, p) == +0.5
 	A─────────>>B        ┘
 	         
