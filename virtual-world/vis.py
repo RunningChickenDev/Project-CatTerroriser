@@ -1,9 +1,13 @@
+#!/usr/bin/python
+# -*- coding: utf-8 -*-
+
+import logg
 import pygame
 
 def open_window():
 	# initialize the pygame module
 	pygame.init()
-	pygame.display.set_caption("The CatTerroriser")
+	pygame.display.set_caption('The CatTerroriser')
 	 
 	# create a surface on screen that has the size of 240 x 180
 	screen = pygame.display.set_mode((640,480))
@@ -14,19 +18,20 @@ def draw_room(screen, room, scalar=100):
 	Room must be an object with attribute 'shape'.
 	Shape is an array of arrays containing points
 	"""
-	pygame.display.set_caption("The CatTerroriser: Room '{}'".format(room.name))
+	l = logg.get('VIS')
+	pygame.display.set_caption('The CatTerroriser: Room \'{}\''.format(room.name))
 	
 	pointlist = []
 	for v in room.shape:
 		pointlist += [[v[0]*scalar + 320, -v[1]*scalar + 240]]
 	
-	print(pointlist)
+	l.debug('Pointlist: %s', pointlist)
 	
 	pygame.draw.lines(screen, (255,0,0), True, pointlist, 1)
 	pygame.display.flip()
 	
-	print("[VIS] Opening window ...")
-	print("[VIS] This will block the program until the window is closed!")
+	l.info('Opening window ...')
+	l.warning('The program will be blocked until the window is closed')
 	
 	running = True
 	# main loop
@@ -38,5 +43,8 @@ def draw_room(screen, room, scalar=100):
 				# change the value to False, to exit the main loop
 				running = False
 	
-	print("[VIS] Window closed!")
-	print("[VIS] Continuing program ...")
+	l.info('Window closed!')
+	l.debug('Continuing program ...')
+	
+if __name__ == '__main__':
+	print("This module is not supposed to be executed.")
