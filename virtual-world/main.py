@@ -3,36 +3,8 @@
 
 import json
 import logg
+import tri
 import vis
-
-def _sld(a, b, p):
-	"""
-	Returns the distance from line AB to point P.
-	
-	This distance is signed: if the point P is to the left
-	of the arrow from A to B, the _sld will be positive.
-	If it is to the right, it will be negative.
-	
-	== Example 1 ==
-	
-	         P           ╗
-	         |           ║ _sld(a, b, p) = +1
-	A--------*----->>>B  ╣
-	         |           ║ _sld(a, b, q) = -1
-	         Q           ╝
-	         
-	== Example 2 ==
-	
-	D<<─────────C        ┐
-	│           ^        │	If ABCD is a square from 0,0 to 1,1,
-	│     v     │        │  and a P is the middle,
-	│    >P<    │        │  then the _sdl of each next vertex in
-	│     ^     │        │	anti-clockwise manner will result in
-	v           │        │	_sdl(v1, v2, p) == +0.5
-	A─────────>>B        ┘
-	         
-	"""
-	return (p[0] - b[0])*(a[1] - b[1]) - (p[1] - b[1])*(a[0] - b[0])
 
 class Room:
 	l = logg.get("ROOM")
@@ -60,7 +32,7 @@ class Room:
 		
 	def _triangulate(self):
 		# TODO: some magic (sweep algorithm)
-		Room.l.critical("No triangulation algorithm!")
+		Room.l.critical("Triangulation algorithm not finished yet!")
 		pass
 	
 	def _union(self, other):
