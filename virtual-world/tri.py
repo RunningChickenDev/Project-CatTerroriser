@@ -83,6 +83,7 @@ class TriangleSweep:
 		self.t = t
 		print(t)
 		self.l = logg.get("TRI")
+		self._l = logg.get("~TRI~")
 	
 	def _helper(self, edge):
 		if edge[2]:
@@ -102,7 +103,7 @@ class TriangleSweep:
 		"""
 		return (p.y > q.y) or ((p.y == q.y) and (p.x < q.x))
 	
-	def _q(self, vertices):
+	def _q(self, i_vertices):
 		"""
 		Priority Queue
 		
@@ -116,7 +117,7 @@ class TriangleSweep:
 		q = []
 		_l = logg.get("~TRI~")
 		
-		for i_vertex in range(0,len(self.vertices)):
+		for i_vertex in i_vertices:
 			if not q:
 				q += [i_vertex]
 			else:
@@ -257,6 +258,63 @@ class TriangleSweep:
 			#9
 			left_edge.h = i_vertex
 
+	def _recursive_untangle(self, diag = None):
+		r = []
+		first = 0						if diag == None else min(diag.s, diag.t)
+		last = (len(self.vertices)-1)	if diag == None else max(diag.s, diag.t)
+		
+		just_returned = False
+		i_vertex = first
+		while i_vertex < last:
+			just_returned = False
+			for ddiag in self.D:
+				if not just_returned:
+					r += [i_vertex]
+				else:
+					continue
+				if ddiag == diag:
+					i_vertex += 1
+					continue
+				if i_vertex == min(ddiag.s, ddiag.t):
+					self._recursive_untangle(ddiag)
+					i_vertex = max(ddiag.s, ddiag.t)
+					just_returned = True
+					self._l.debug("returned to {}".format(i_vertex))
+				else:
+					i_vertex += 1
+		r += [last]
+		self.monotones += [r]
+		self._l.debug("one recursion done: {}".format(self.monotones))
+
+	def _chain(self, monotone, j):
+		if self._vxh(self.vertices[j-1].y, self.vertices[j].y):
+			return -1
+		else:
+			return +1
+		
+	def monotone_triangulation(self, monotone):
+		D = []
+		if len(monotone) < 3:
+			raise IndexError("A monotone piece must contain at least three vertices!")
+		if len(monotone) == 3:
+			if _sld(self.vertices[monotone[0]], self.vertices[monotone[1]], self.vertices[monotone[2]]) > 0:
+				return [[monotone[0], monotone[1], monotone[2]]]
+			else:
+				return [[monotone[0], monotone[2], monotone[1]]]
+		q = self._q(monotone)
+		self.l.debug("Monotone priority queue: {}".format(q))
+		S = [monotone[0], monotone[1]]
+		for j in range(3,len(monotone)-1):
+			if self._chain(j) != self._chain(S[-1]):
+				while len(S) > 1:
+					p = S.pop()
+					D = [Edge(j, p)]
+				S.pop()
+				S += [j-1]
+				S += [j]
+			else:
+				p = S.pop()
+
 	def sweep(self):
 		self.l.debug("Input (Polygon): %s", self.t.polygon)
 		self.l.debug("Input (Holes): %s", self.t.holes)
@@ -284,7 +342,7 @@ class TriangleSweep:
 		self.l.info("Vertices: %s", self.vertices)
 		self.l.info("Edges: %s", self.edges)
 		
-		self.q = self._q(self.vertices)
+		self.q = self._q(range(0, len(self.vertices)))
 		self.l.info("Priority Queue (LIFO): %s", self.q)
 		
 		# These are status objects
@@ -298,9 +356,19 @@ class TriangleSweep:
 			i_vertex = self.q.pop()
 			self._handle(i_vertex)
 		
-		self.l.info("Done!")
+		self.l.info("Done partition shape in y-monotone subsets ...")
 		self.l.info("T: {}".format(self.T))
 		self.l.info("D: {}".format(self.D))
+		
+		# now for the monotone handling ...
+		self.monotones = []
+		self._recursive_untangle()
+		self.l.info("Monotones: {}".format(self.monotones))
+		
+		# per monotone ...
+		for monotone in self.monotones:
+			indices = self.monotone_triangulation(monotone)
+			self.l.debug("Monotone indices: {}".format(indices))
 		
 
 class Triangulation:
