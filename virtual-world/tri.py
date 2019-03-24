@@ -93,7 +93,7 @@ class TriangleSweep:
 			return None
 			
 	
-	def _vxh(self, p,q):
+	def _vxh(self, p, q):
 		"""
 		Stands for "VerteX Higher" function.
 		Determines if vertex p is above vertex q.
@@ -287,7 +287,7 @@ class TriangleSweep:
 		self._l.debug("one recursion done: {}".format(self.monotones))
 
 	def _chain(self, monotone, j):
-		if self._vxh(self.vertices[j-1].y, self.vertices[j].y):
+		if self._vxh(self.vertices[j-1], self.vertices[j]):
 			return -1
 		else:
 			return +1
@@ -303,17 +303,35 @@ class TriangleSweep:
 				return [[monotone[0], monotone[2], monotone[1]]]
 		q = self._q(monotone)
 		self.l.debug("Monotone priority queue: {}".format(q))
-		S = [monotone[0], monotone[1]]
-		for j in range(3,len(monotone)-1):
-			if self._chain(j) != self._chain(S[-1]):
+		S = [0,1]
+		for j in range(2,len(monotone)-1):
+			self._l.debug("j = %d", j)
+			if self._chain(monotone, q[j]) != self._chain(monotone, q[S[-1]]):
+				self._l.debug("Non-chain; Current stack: {}".format(S))
 				while len(S) > 1:
 					p = S.pop()
-					D = [Edge(j, p)]
+					D += [Edge(q[-j-1], q[-p-1], None)]
+					self._l.debug(".")
 				S.pop()
 				S += [j-1]
 				S += [j]
 			else:
-				p = S.pop()
+				self._l.debug("Same chain; Current stack: {}".format(S))
+				l = S.pop()
+				k = S[-1]
+				self._l.debug("j: %d; k: %d; l: %d", j,k,l)
+				while k >= 0 and _sld(self.vertices[q[-k-1]],self.vertices[q[-j-1]],self.vertices[q[-l-1]]) > 0:
+					l = k
+					k = S[-1] if S else -1
+					S.pop()
+					D += [Edge(q[-j-1], q[-k-1], None)]
+					self._l.debug(".")
+				S += [l]
+				S += [j]
+		self._l.debug("Remainder S: %s", S)
+		for us in S[1:-1]:
+			D += [Edge(q[-len(monotone)], q[-us-1], None)]
+		self._l.debug("D: %s", D)
 
 	def sweep(self):
 		self.l.debug("Input (Polygon): %s", self.t.polygon)
