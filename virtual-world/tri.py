@@ -1,24 +1,26 @@
+# -*- coding: utf-8 -*-
+
 from operator import itemgetter
 import logg
 
 def _sld(a, b, p):
 	"""
 	Returns the distance from line AB to point P.
-	
+
 	This distance is signed: if the point P is to the left
 	of the arrow from A to B, the _sld will be positive.
 	If it is to the right, it will be negative.
-	
+
 	== Example 1 ==
-	
+
 	         P           ╗
 	         |           ║ _sld(a, b, p) = +1
 	A--------*----->>>B  ╣
-	         |           ║ _sld(a, b, q) = -1
+		 |           ║ _sld(a, b, q) = -1
 	         Q           ╝
-	         
+
 	== Example 2 ==
-	
+
 	D<<─────────C        ┐
 	│           ^        │	If ABCD is a square from 0,0 to 1,1,
 	│     v     │        │  and a P is the middle,
@@ -26,17 +28,121 @@ def _sld(a, b, p):
 	│     ^     │        │	anti-clockwise manner will result in
 	v           │        │	_sdl(v1, v2, p) == +0.5
 	A─────────>>B        ┘
-	         
+
 	"""
 	return (p[0] - b[0])*(a[1] - b[1]) - (p[1] - b[1])*(a[0] - b[0])
 
+class ConnEdge:
+	"""
+	A ConnEdge is a half-edge in a polygon
+	with multiple inner faces.
+	
+	Fields:
+		origin	-	A vertex from where this line comes (the source)
+		face	-	An identifier for the face to its left
+		twin	-	The half-edge moving in the opposite direction, but along the same vertices
+		prev	-	The half-edge preceding this one: this == prev.next
+		next	-	The half-edge successing this one: this == next.prev
+	"""
+	def __init__(self, origin, face, twin, prev, next, helper = None):
+		self.origin = origin
+		self.face = face
+		self.twin = twin
+		self.prev = prev
+		self.next = next
+		self.helper = helper
+
+	def __str__(self):
+		return "Edge(from {}, face {}, twin? {}, prev? {}, next? {}, helper? {})".format(self.origin, self.face, self.twin!=None,self.prev!=None,self.next!=None,self.helper!=None)
+
+	def __repr__(self):
+		return "<__str__> " + str(self)
+
+class DCEL:
+	"""
+	DCEL stands for Doubly Connected Edge List.
+	Such a list contains a polygon with within
+	chains of vertices.
+	
+	The list contains half-edges, represented as ConnEdges.
+	See ConnEdge documentation for more.
+	
+	This object also remembers how many faces it handles.
+	This object also remembers the edges.
+	
+	Multiple DCELs will have different objects of
+	ConnEdge, as they are different polygons. 
+	"""
+	def __init__(self, vertices):
+		self.faces = 1
+		self.edges = []
+		for vertex in vertices:
+			self.edges += [ConnEdge(vertex, 0, None, None, None)]
+		for i in range(len(self.edges)):
+			e = self.edges[i]
+			e.next = self.edges[ (i+1) % len(self.edges) ]
+			e.prev = self.edges[ (i-1) % len(self.edges) ]
+		logg.get("DCEL").debug("Created a list of edges as: %s", self.edges)
+
+	def insert(self, src, tgt):		
+		starters = []			# All edges that start at the source
+		enders = []				# All edges that start at the target
+		for e in self.edges:
+			if e.origin is src:
+				starters += [e]
+			elif e.origin is tgt:
+				enders += [e]
+				
+		# If starter and ender dont have the same face,
+		# it means the diagonal cuts through multiple
+		# faces. This is not handled, and returns a ValueError
+		se_pair = None
+		face = None
+		for starter in starters:
+			for ender in enders:
+				if starter.face == ender.face:
+					se_pair = (starter, ender)
+					face = starter.face
+		if not se_pair:
+			raise ValueError("Cannot find a starter/ender-pair on the same face")
+		
+		new_face = self.new_face()
+		left_edge = ConnEdge(src, face, None, se_pair[0].prev, se_pair[1])
+		right_edge = ConnEdge(tgt, new_face, None, se_pair[1].prev, se_pair[0])
+		left_edge.twin = right_edge
+		right_edge.twin = left_edge
+
+		left_edge.prev.next = left_edge
+		left_edge.next.prev = left_edge
+		right_edge.prev.next = right_edge
+		right_edge.next.prev = right_edge		
+
+		# Update the new face
+		e = right_edge.next
+		while e is not right_edge:
+			e.face = new_face
+			e = e.next
+
+		self.edges += [left_edge]
+		self.edges += [right_edge]
+
+	def new_face(self):
+		self.faces += 1
+		return self.faces - 1
+
 class Vertex:
+	def tuples_to_vertices(tuples):
+		r = []
+		for t in tuples:
+			r += [Vertex(t[0], t[1])]
+		return r
+
 	def __init__(self, x, y, p=None,n=None):
 		self.x = x
 		self.y = y
 		self.p = p
 		self.n = n
-	
+
 	def __getitem__(self, idx):
 		if idx == 0:
 			return self.x
@@ -44,10 +150,10 @@ class Vertex:
 			return self.y
 		else:
 			raise IndexError()
-	
+
 	def __str__(self):
 		return "[{}, {}]".format(self.x, self.y)
-	
+
 	def __repr__(self):
 		return "Vertex({}, {})".format(self.x, self.y)
 
@@ -57,7 +163,7 @@ class Edge:
 		self.t = target
 		self.h = helper
 		self.idx = idx
-	
+
 	def __getitem__(self, idx):
 		if idx == 0:
 			return self.s
@@ -67,10 +173,10 @@ class Edge:
 			return self.h
 		else:
 			raise IndexError()
-	
+
 	def __str__(self):
 		return "({} -> {}; help: {})".format(self.s, self.t, self.h)
-	
+
 	def __repr__(self):
 		return "Edge({}, {}, {})".format(self.s, self.t, self.h)
 
@@ -84,39 +190,39 @@ class TriangleSweep:
 		print(t)
 		self.l = logg.get("TRI")
 		self._l = logg.get("~TRI~")
-	
+
 	def _helper(self, edge):
 		if edge[2]:
 			return edge[2]
 		else:
 			self.l.error("Edge did not have helper! %s", edge)
 			return None
-			
-	
+
+
 	def _vxh(self, p, q):
 		"""
 		Stands for "VerteX Higher" function.
 		Determines if vertex p is above vertex q.
-		
+
 		Vertex p is above q if p_y > q_y or,
 		when p_y == q_y, if p_x < q_x
 		"""
 		return (p.y > q.y) or ((p.y == q.y) and (p.x < q.x))
-	
+
 	def _q(self, i_vertices):
 		"""
 		Priority Queue
-		
+
 		Args:
 			vertices (list of lists of 2: [[a,b],[c,d]])
 		Returns:
 			Priority queue in LIFO-fashion, so it is
 			compatible with list.pop() (First pop is highest priority).
-		
+
 		"""
 		q = []
 		_l = logg.get("~TRI~")
-		
+
 		for i_vertex in i_vertices:
 			if not q:
 				q += [i_vertex]
@@ -131,7 +237,7 @@ class TriangleSweep:
 			_l.debug("partial q: %s" , q)
 
 		return q
-	
+
 	def _vertex_type(self, o):
 		if hasattr(o, 's'):
 			vertex = o.s
@@ -141,7 +247,7 @@ class TriangleSweep:
 			return None
 		else:
 			vertex = self.vertices[o]
-		
+
 		above_prev = self._vxh(vertex, vertex.p)
 		above_next = self._vxh(vertex, vertex.n)
 		if above_prev and above_next:
@@ -159,9 +265,9 @@ class TriangleSweep:
 
 	def _handle(self, i_vertex):
 		t = self._vertex_type(i_vertex)
-		
+
 		self.l.debug("Handling  %-5d%-10s%-10s", i_vertex, self.vertices[i_vertex], t)
-		
+
 		m = getattr(self, "_handle_"+t)
 		m(i_vertex)
 
@@ -198,7 +304,7 @@ class TriangleSweep:
 		#4
 		self.T += [i_vertex]
 		self.edges[i_vertex].h = i_vertex
-		
+
 
 	def _handle_merge(self, i_vertex):
 		vertex = self.vertices[i_vertex]
@@ -262,7 +368,7 @@ class TriangleSweep:
 		r = []
 		first = 0						if diag == None else min(diag.s, diag.t)
 		last = (len(self.vertices)-1)	if diag == None else max(diag.s, diag.t)
-		
+
 		just_returned = False
 		i_vertex = first
 		while i_vertex < last:
@@ -291,7 +397,7 @@ class TriangleSweep:
 			return -1
 		else:
 			return +1
-		
+
 	def monotone_triangulation(self, monotone):
 		D = []
 		if len(monotone) < 3:
@@ -336,14 +442,14 @@ class TriangleSweep:
 	def sweep(self):
 		self.l.debug("Input (Polygon): %s", self.t.polygon)
 		self.l.debug("Input (Holes): %s", self.t.holes)
-		
+
 		self.vertices = []
 		for v in self.t.polygon:
 			self.vertices += [Vertex(v[0],v[1])]
 		#for hole in self.t.holes:
 		#	for v in hole:
 		#		self.vertices += [TriangleSweep.Vertex(v[0],v[1])]
-		
+
 		self.edges = []	# Currently incorrect
 		for i_vertex in range(0, len(self.vertices)):
 			if i_vertex is not len(self.vertices)-1:
@@ -356,44 +462,44 @@ class TriangleSweep:
 				e.s.n = e.t
 				e.t.p = e.s
 				self.edges += [e]
-		
+
 		self.l.info("Vertices: %s", self.vertices)
 		self.l.info("Edges: %s", self.edges)
-		
+
 		self.q = self._q(range(0, len(self.vertices)))
 		self.l.info("Priority Queue (LIFO): %s", self.q)
-		
+
 		# These are status objects
 		# They lack the correct data structures,
 		# because they are in Python
 		self.T = []
 		self.D = []
-		
+
 		# Here starts step 3
 		while self.q:
 			i_vertex = self.q.pop()
 			self._handle(i_vertex)
-		
+
 		self.l.info("Done partition shape in y-monotone subsets ...")
 		self.l.info("T: {}".format(self.T))
 		self.l.info("D: {}".format(self.D))
-		
+
 		# now for the monotone handling ...
 		self.monotones = []
 		self._recursive_untangle()
 		self.l.info("Monotones: {}".format(self.monotones))
-		
+
 		# per monotone ...
 		for monotone in self.monotones:
 			indices = self.monotone_triangulation(monotone)
 			self.l.debug("Monotone indices: {}".format(indices))
-		
+
 
 class Triangulation:
 	"""
 	An instance of this class describes
 	the outcome of the triangulation algorithm.
-	
+
 	The class has functions to create
 	triangulation instances.
 	"""
@@ -409,14 +515,20 @@ class Triangulation:
 	###########
 	# METHODS #
 	###########
-	
+
 	def __init__(self, polygon=[], holes=[[]], vertices=[], indices=[]):
 		self.polygon = polygon
 		self.holes = holes
 		self.vertices = vertices
 		self.indices = indices
-		
+
 if __name__ == '__main__':
 #	s = Triangulation([(-1,-1),(1,-1),(1,1),(-1,1)])
-	s = Triangulation([(-1,-2),(0,-1),(1,-2),(2,0),(1,2),(0,1),(-1,2),(-2,0)])
-	TriangleSweep.triangulate(s)
+	tuples = [(-1,-2),(0,-1),(1,-2),(2,0),(1,2),(0,1),(-1,2),(-2,0)]
+	vertices = Vertex.tuples_to_vertices(tuples)
+	#s = Triangulation([(-1,-2),(0,-1),(1,-2),(2,0),(1,2),(0,1),(-1,2),(-2,0)])
+	#TriangleSweep.triangulate(s)
+#	vertices = [(-1,-2),(0,-1),(1,-2),(2,0),(1,2),(0,1),(-1,2),(-2,0)]
+	D = DCEL(vertices)
+	D.insert(vertices[1], vertices[3])
+	logg.get("").info(D.edges)
