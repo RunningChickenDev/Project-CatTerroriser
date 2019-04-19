@@ -284,34 +284,55 @@ class TriangleSweep:
 					i_vertex += 1
 		r += [last]
 		self.monotones += [r]
-		self._l.debug("one recursion done: {}".format(self.monotones))
+		self._l.debug("one recursion done: {}".format(r))
 
 	def _chain(self, monotone, j):
+		"""
+		+1 for the Left chain;
+		-1 for the Right chain;
+		"""
 		if self._vxh(self.vertices[j-1], self.vertices[j]):
-			return -1
-		else:
 			return +1
+		else:
+			return -1
 		
 	def monotone_triangulation(self, monotone):
-		D = []
+		"""
+		This function is a clusterfuck.
+		It triangulates a monotone polygon
+		"""
+		# In case to monotone is incorrect
 		if len(monotone) < 3:
 			raise IndexError("A monotone piece must contain at least three vertices!")
+		# In case the monotone is a triangle
 		if len(monotone) == 3:
 			if _sld(self.vertices[monotone[0]], self.vertices[monotone[1]], self.vertices[monotone[2]]) > 0:
+				# An anti-clockwise winding triangle
 				return [[monotone[0], monotone[1], monotone[2]]]
 			else:
+				# Clockwise triangle
 				return [[monotone[0], monotone[2], monotone[1]]]
+		
+		# init status objects
+		D = []
+		indices = []
+		
+		# Up-To-Down Queue
 		q = self._q(monotone)
 		self.l.debug("Monotone priority queue: {}".format(q))
+		
 		S = [0,1]
 		for j in range(2,len(monotone)-1):
 			self._l.debug("j = %d", j)
-			if self._chain(monotone, q[j]) != self._chain(monotone, q[S[-1]]):
+			if self._chain(monotone, q[-j-1]) != self._chain(monotone, q[-S[-1]-1]):
 				self._l.debug("Non-chain; Current stack: {}".format(S))
 				while len(S) > 1:
 					p = S.pop()
 					D += [Edge(q[-j-1], q[-p-1], None)]
-					self._l.debug(".")
+					if self._chain(monotone, q[-j-1]) > 0:
+						indices += [[ q[-j-1], q[-p-1], q[-S[-1]-1] ]]
+					else:
+						indices += [[ q[-j-1], q[-S[-1]-1], q[-p-1] ]]
 				S.pop()
 				S += [j-1]
 				S += [j]
@@ -320,18 +341,33 @@ class TriangleSweep:
 				l = S.pop()
 				k = S[-1]
 				self._l.debug("j: %d; k: %d; l: %d", j,k,l)
-				while k >= 0 and _sld(self.vertices[q[-k-1]],self.vertices[q[-j-1]],self.vertices[q[-l-1]]) > 0:
+				self._l.debug("q[j]: %d; q[k]: %d; q[l]: %d", q[-j-1],q[-k-1],q[-l-1])
+				
+				triwind = _sld(self.vertices[q[-j-1]],self.vertices[q[-k-1]],self.vertices[q[-l-1]]) > 0
+				chain = self._chain(monotone, q[-j-1]) > 0
+				
+				self._l.debug("Triwind: %d; Chain: %d", triwind, chain)
+				
+				while S and triwind == chain:
 					l = k
-					k = S[-1] if S else -1
+					k = S[-1]
+					triwind = _sld(self.vertices[q[-j-1]],self.vertices[q[-k-1]],self.vertices[q[-l-1]]) > 0
 					S.pop()
 					D += [Edge(q[-j-1], q[-k-1], None)]
-					self._l.debug(".")
+					if self._chain(monotone, q[-j-1]) > 0:
+						indices += [[ q[-j-1], q[-l-1], q[-k-1] ]]
+					else:
+						indices += [[ q[-j-1], q[-k-1], q[-l-1] ]]
+					self._l.debug(".D %s", D)
 				S += [l]
 				S += [j]
 		self._l.debug("Remainder S: %s", S)
 		for us in S[1:-1]:
 			D += [Edge(q[-len(monotone)], q[-us-1], None)]
 		self._l.debug("D: %s", D)
+		
+		self._l.debug("Indices: %s", indices)
+		return indices
 
 	def sweep(self):
 		self.l.debug("Input (Polygon): %s", self.t.polygon)
@@ -384,9 +420,10 @@ class TriangleSweep:
 		self.l.info("Monotones: {}".format(self.monotones))
 		
 		# per monotone ...
+		self.indices = []
 		for monotone in self.monotones:
-			indices = self.monotone_triangulation(monotone)
-			self.l.debug("Monotone indices: {}".format(indices))
+			self.indices += self.monotone_triangulation(monotone)
+			self.l.debug("All indices: {}".format(self.indices))
 		
 
 class Triangulation:
