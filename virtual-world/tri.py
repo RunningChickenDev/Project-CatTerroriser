@@ -399,13 +399,9 @@ class TriangleSweep:
 		"""
 		if self._vxh(self.vertices[j-1], self.vertices[j]):
 			return +1
-<<<<<<< HEAD
 		else:
 			return -1
-		
-=======
 
->>>>>>> d919328d8ba69166fc0a7393919528453895d324
 	def monotone_triangulation(self, monotone):
 		"""
 		This function is a clusterfuck.
@@ -532,15 +528,10 @@ class TriangleSweep:
 		# per monotone ...
 		self.indices = []
 		for monotone in self.monotones:
-<<<<<<< HEAD
 			self.indices += self.monotone_triangulation(monotone)
 			self.l.debug("All indices: {}".format(self.indices))
-		
-=======
 			indices = self.monotone_triangulation(monotone)
 			self.l.debug("Monotone indices: {}".format(indices))
-
->>>>>>> d919328d8ba69166fc0a7393919528453895d324
 
 class Triangulation:
 	"""
