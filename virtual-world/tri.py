@@ -2,6 +2,7 @@
 
 from operator import itemgetter
 import logg
+import vis
 
 def _sld(a, b, p):
 	"""
@@ -130,11 +131,75 @@ class DCEL:
 		self.faces += 1
 		return self.faces - 1
 
+	def _march_face_data(self, e0):
+		self._Sf += [e0.face]
+		e = e0.next
+		while e is not e0:
+			if e.twin != None:
+				if not self.Sf.contains(e.twin.face):
+					self._march_face_data(e)
+			
+
+	def gen_face_data(self, q=["faces","colours"]):
+		l = logg.get("DCEL")		
+		data = {}
+		
+		if "faces" in q:
+			data["network"] = {}
+			polygons = {}
+			roots = [self.edges[0]]
+			Sf = [self.edges[0].face]
+			#per polygon
+			while roots:
+				e0 = roots.pop()
+				e = e0.next
+				verts = [e0.origin]
+				data["network"][e.face] = []
+				#per edge
+				while e != e0:
+					if e.twin != None:
+						data["network"][e.face] += [e.twin.face]
+						if e.twin.face not in Sf:
+							roots += [e.twin]
+							Sf += [e.twin.face]
+					verts += [e.origin]
+					e = e.next
+				if e.twin != None:
+					data["network"][e.face] += [e.twin.face]
+				polygons[e.face] = verts
+				Sf.remove(e.face)
+			data["polys"] = polygons
+		
+		if "colours" in q:
+			if "faces" not in q:
+				l.warning("Cannot generate data for DCEL colours if faces are not generated!")
+			else:
+				data["colours"] = {}
+				c = 0
+				for face in data["network"].keys():
+					potentialis = [0,1,2,3]
+					# check neighbors
+					for n in data["network"][face]:
+						if n in data["colours"]:
+							potentialis.remove(data["colours"][n])
+					data["colours"][face] = potentialis[c % len(potentialis)]
+					c+=1
+		return data
+
 class Vertex:
 	def tuples_to_vertices(tuples):
 		r = []
 		for t in tuples:
 			r += [Vertex(t[0], t[1])]
+		return r
+	
+	def vertices_to_tuples(vertices, whole = False):
+		r = []
+		for v in vertices:
+			if whole:
+				vertices += [(int(v.x),int(v.y))]
+			else:
+				vertices += [(v.x,v.y)]
 		return r
 
 	def __init__(self, x, y, p=None,n=None):
@@ -479,12 +544,8 @@ class TriangleSweep:
 		self.l.debug("Input (Polygon): %s", self.t.polygon)
 		self.l.debug("Input (Holes): %s", self.t.holes)
 
-		self.vertices = []
-		for v in self.t.polygon:
-			self.vertices += [Vertex(v[0],v[1])]
-		#for hole in self.t.holes:
-		#	for v in hole:
-		#		self.vertices += [TriangleSweep.Vertex(v[0],v[1])]
+		self.vertices = self.t.polygon
+		# TODO: add handling for holes
 
 		self.edges = []	# Currently incorrect
 		for i_vertex in range(0, len(self.vertices)):
@@ -561,12 +622,14 @@ class Triangulation:
 		self.indices = indices
 
 if __name__ == '__main__':
-#	s = Triangulation([(-1,-1),(1,-1),(1,1),(-1,1)])
 	tuples = [(-1,-2),(0,-1),(1,-2),(2,0),(1,2),(0,1),(-1,2),(-2,0)]
 	vertices = Vertex.tuples_to_vertices(tuples)
-	#s = Triangulation([(-1,-2),(0,-1),(1,-2),(2,0),(1,2),(0,1),(-1,2),(-2,0)])
-	#TriangleSweep.triangulate(s)
-#	vertices = [(-1,-2),(0,-1),(1,-2),(2,0),(1,2),(0,1),(-1,2),(-2,0)]
+	t = Triangulation(vertices)
+	
 	D = DCEL(vertices)
 	D.insert(vertices[1], vertices[3])
-	logg.get("").info(D.edges)
+	D.insert(vertices[5], vertices[7])
+	screen = vis.open_window()
+	vis.draw_DCEL(screen, D, msg="__main__ test")
+	
+#	TriangleSweep.triangulate(t)
