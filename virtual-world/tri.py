@@ -54,10 +54,10 @@ class ConnEdge:
 		self.helper = helper
 
 	def __str__(self):
-		return "Edge(from {}, face {}, twin? {}, prev? {}, next? {}, helper? {})".format(self.origin, self.face, self.twin!=None,self.prev!=None,self.next!=None,self.helper!=None)
+		return "ConnEdge(from {}, face {})".format(self.origin, self.face)
 
 	def __repr__(self):
-		return "<__str__> " + str(self)
+		return str(self)
 
 class DCEL:
 	"""
@@ -74,7 +74,7 @@ class DCEL:
 	Multiple DCELs will have different objects of
 	ConnEdge, as they are different polygons. 
 	"""
-	def __init__(self, vertices):
+	def __init__(self, vertices, update_vertices = True):
 		self.faces = 1
 		self.edges = []
 		for vertex in vertices:
@@ -83,7 +83,10 @@ class DCEL:
 			e = self.edges[i]
 			e.next = self.edges[ (i+1) % len(self.edges) ]
 			e.prev = self.edges[ (i-1) % len(self.edges) ]
-		logg.get("DCEL").debug("Created a list of edges as: %s", self.edges)
+		
+		if update_vertices:
+			for e in self.edges:
+				e.origin.e = e	# Cool syntax bro
 
 	def insert(self, src, tgt):		
 		starters = []			# All edges that start at the source
@@ -107,6 +110,7 @@ class DCEL:
 		if not se_pair:
 			raise ValueError("Cannot find a starter/ender-pair on the same face")
 		
+		# Cool syntax bro
 		new_face = self.new_face()
 		left_edge = ConnEdge(src, face, None, se_pair[0].prev, se_pair[1])
 		right_edge = ConnEdge(tgt, new_face, None, se_pair[1].prev, se_pair[0])
@@ -186,6 +190,9 @@ class DCEL:
 					c+=1
 		return data
 
+	def __str__(self):
+		return "A DCEL containing: {}".format(self.edges)
+
 class Vertex:
 	def tuples_to_vertices(tuples):
 		r = []
@@ -202,11 +209,28 @@ class Vertex:
 				vertices += [(v.x,v.y)]
 		return r
 
-	def __init__(self, x, y, p=None,n=None):
+	def __init__(self, x, y, e = None):
 		self.x = x
 		self.y = y
-		self.p = p
-		self.n = n
+		self.e = e
+
+	def prev(self):
+		try:
+			return self.e.prev.origin
+		except AttributeError:
+			logg.get("VTX").error("Could not get previous!")
+
+	def next(self):
+		try:
+			return self.e.next.origin
+		except AttributeError:
+			logg.get("VTX").error("Could not get next!")
+
+	def help(self):
+		try:
+			return self.e.helper
+		except AttributeError:
+			logg.get("VTX").error("Could not get helper!")
 
 	def __getitem__(self, idx):
 		if idx == 0:
@@ -274,7 +298,7 @@ class TriangleSweep:
 		"""
 		return (p.y > q.y) or ((p.y == q.y) and (p.x < q.x))
 
-	def _q(self, i_vertices):
+	def _q(self, vertices):
 		"""
 		Priority Queue
 
@@ -288,146 +312,139 @@ class TriangleSweep:
 		q = []
 		_l = logg.get("~TRI~")
 
-		for i_vertex in i_vertices:
+		for vertex in vertices:
 			if not q:
-				q += [i_vertex]
+				q += [vertex]
 			else:
 				inserted = False
-				for i_entry in range(0,len(q)):
-					if not self._vxh(self.vertices[i_vertex], self.vertices[q[i_entry]]) and not inserted:
-						q.insert(i_entry, i_vertex)
+				for entry in q:
+					if not inserted and not self._vxh(vertex, entry):
+						q.insert(q.index(entry), vertex)
 						inserted = True
 				if not inserted:
-					q += [i_vertex]
+					q += [vertex]
 			_l.debug("partial q: %s" , q)
 
 		return q
 
-	def _vertex_type(self, o):
-		if hasattr(o, 's'):
-			vertex = o.s
-		elif hasattr(o, 'x'):
-			vertex = o
-		elif o == None:
-			return None
-		else:
-			vertex = self.vertices[o]
-
-		above_prev = self._vxh(vertex, vertex.p)
-		above_next = self._vxh(vertex, vertex.n)
+	def _vertex_type(self, vertex):
+		above_prev = self._vxh(vertex, vertex.prev())
+		above_next = self._vxh(vertex, vertex.next())
 		if above_prev and above_next:
-			if vertex.p.x >= vertex.n.x:
+			if vertex.prev().x >= vertex.next().x:
 				return "start"
 			else:
 				return "split"
 		elif not above_prev and not above_next:
-			if vertex.p.x <= vertex.n.x:
+			if vertex.prev().x <= vertex.next().x:
 				return "end"
 			else:
 				return "merge"
 		else:
 			return "regular"
 
-	def _handle(self, i_vertex):
-		t = self._vertex_type(i_vertex)
+	def _handle(self, vertex):
+		t = self._vertex_type(vertex)
 
-		self.l.debug("Handling  %-5d%-10s%-10s", i_vertex, self.vertices[i_vertex], t)
+		self.l.debug("Handling\t%-10s%-10s", str(vertex), t)
 
 		m = getattr(self, "_handle_"+t)
-		m(i_vertex)
+		m(vertex)
 
-	def _handle_start(self, i_vertex):
-		#1
-		self.T += [i_vertex]
-		self.edges[i_vertex].h = i_vertex
+	def _handle_start(self, vertex):
+		#1: 'Insert e_i in T and set helper(e_i) to v_i'
+		self.T += [vertex]
+		vertex.e.helper = vertex
 
-	def _handle_end(self, i_vertex):
-		#1
-		if self._vertex_type(self.edges[i_vertex-1].h) == "merge":
-			#2
-			self.D += [Edge(self.vertices[i_vertex], self.edges[i_vertex-1].h, None)]
-		#3
-		self.T.remove((i_vertex-1) % len(self.vertices))
+	def _handle_end(self, vertex):
+		#1: 'if helper(e_i-1) is a merge vertex'
+		if self._vertex_type(vertex.prev()) == "merge":
+			#2: 'then Insert the diagonal connecting v_i to helper(e_i-1) in D'
+			self.D.insert(vertex, vertex.prev().help())
+		#3: 'Delete e_i-1 from T'
+		self.T.remove(vertex.prev())
 
-	def _handle_split(self, i_vertex):
-		vertex = self.vertices[i_vertex]
-		#1
-		left_edge = []
-		left_edge_xt = float('inf')
-		for e_i in self.T:
-			edge = self.edges[e_i]
-			if (edge.s.y >= vertex.y and edge.t.y <= vertex.y) or (edge.s.y <= vertex.y and edge.t.y >= vertex.y):
-				xt = ((vertex.y-edge.s.y)/(edge.t.y-edge.s.y))*(edge.t.x-edge.s.x)+edge.s.x
-				if xt < vertex.x and xt < left_edge_xt:
-					# Found it ~!
-					left_edge_xt = xt
-					left_edge = edge
-		#2
-		self.D += [Edge(i_vertex, self._helper(left_edge), None)]
-		#3
-		left_edge.h = i_vertex
-		#4
-		self.T += [i_vertex]
-		self.edges[i_vertex].h = i_vertex
-
-
-	def _handle_merge(self, i_vertex):
-		vertex = self.vertices[i_vertex]
-		#1
-		if self._vertex_type(self.edges[i_vertex-1].h) == "merge":
-			#2
-			self.D += [Edge(i_vertex, self.edges[i_vertex-1].h, None)]
-		#3
-		self.T.remove((i_vertex-1) % len(self.vertices))
-		#4
+	def _handle_split(self, vertex):
+		#1: 'Search in T to find the edge e_j directly left of v_i'
 		left_edge = None
 		left_edge_xt = float('inf')
-		for e_i in self.T:
-			edge = self.edges[e_i]
-			if (edge.s.y >= vertex.y and edge.t.y <= vertex.y) or (edge.s.y <= vertex.y and edge.t.y >= vertex.y):
-				xt = ((vertex.y-edge.s.y)/(edge.t.y-edge.s.y))*(edge.t.x-edge.s.x)+edge.s.x
+		for v in self.T: # TODO: T should contain only edges, not vertices
+			edge = v.e
+			if (edge.origin.y >= vertex.y and edge.next.origin.y <= vertex.y) \
+					or (edge.origin.y <= vertex.y and edge.next.origin.y >= vertex.y):
+				xt = ((vertex.y-edge.origin.y)/(edge.next.origin.y-edge.origin.y)) \
+						*(edge.next.origin.x-edge.origin.x)+edge.origin.x
 				if xt < vertex.x and xt < left_edge_xt:
 					# Found it ~!
 					left_edge_xt = xt
 					left_edge = edge
-		#5
-		if self._vertex_type(left_edge) == "merge":
-			#6
-			self.D += [Edge(i_vertex, self._helper(left_edge), None)]
-		#7
-		left_edge.h = i_vertex
+		#2: 'Insert the diagonal connecting v_i to helper(e_j) in D'
+		self.D.insert(vertex, left_edge.helper)
+		#3: 'helper(e_j) = v_i'
+		left_edge.elperh = vertex
+		#4: 'Insert e_i in T and set helper(e_i) to v_i'
+		self.T += [vertex]
+		vertex.e.helper = vertex
 
-	def _handle_regular(self, i_vertex):
-		vertex = self.vertices[i_vertex]
-		#1
-		if self.vertices[i_vertex-1].y > self.vertices[i_vertex].y:
-			#2
-			if self._vertex_type(self.edges[i_vertex-1].h) == "merge":
-				#3
-				self.D += [Edge(i_vertex, self._helper(self.edges[i_vertex-1]), None)]
-			#4
-			self.T.remove((i_vertex-1) % len(self.vertices))
-			#5
-			self.T += [i_vertex]
-			self.edges[i_vertex].h = i_vertex
-		#6
+	def _handle_merge(self, vertex):
+		#1: 'if helper(e_i-1) is a merge vertex'
+		if self._vertex_type(vertex.prev().help()) == "merge":
+			#2: 'then Insert the diagonal connecting v_i to helper(e_i-1) in D'
+			self.D.insert(vertex, vertex.prev().help())
+		#3: 'Delete e_i-1 from T'
+		self.T.remove(vertex.prev())
+		#4: 'Search in T to find the edge e_j directly left of v_i'
+		left_edge = None
+		left_edge_xt = float('inf')
+		for v in self.T: # TODO: T should contain only edges, not vertices
+			edge = v.e
+			if (edge.origin.y >= vertex.y and edge.next.origin.y <= vertex.y) \
+					or (edge.origin.y <= vertex.y and edge.next.origin.y >= vertex.y):
+				xt = ((vertex.y-edge.origin.y)/(edge.next.origin.y-edge.origin.y)) \
+						*(edge.next.origin.x-edge.origin.x)+edge.origin.x
+				if xt < vertex.x and xt < left_edge_xt:
+					# Found it ~!
+					left_edge_xt = xt
+					left_edge = edge
+		#5: 'if helper(e_j) is a merge vertex'
+		if self._vertex_type(left_edge.helper) == "merge":
+			#6: 'then Insert the diagonal connecting v_i to helper(e_j) in D'
+			self.D.insert(vertex, left_edge.helper)
+		#7: 'helper(e_j) = v_i'
+		left_edge.helper = vertex
+
+	def _handle_regular(self, vertex):
+		#1: 'if the interior of P lies to the right of v_i'
+		if vertex.prev().y > vertex.y:	# TODO: I don't think this works
+			#2: 'then if helper(e_i-1) is a merge vertex'
+			if self._vertex_type(vertex.prev().help()) == "merge":
+				#3: 'then Insert the diagonal connecting v_i to helper(e_i-1) in D'
+				self.D.insert(vertex, vertex.prev().help())
+			#4: 'Delete e_i-1 from T'
+			self.T.remove(vertex.prev())
+			#5: 'Insert e_i in T and set helper(e_i) to v_i'
+			self.T += [vertex]
+			vertex.e.helper = vertex
+		#6: 'else Search in T to find the edge e_j directly left of v_i'
 		else:
 			left_edge = None
 			left_edge_xt = float('inf')
-			for e_i in self.T:
-				edge = self.edges[e_i]
-			if (edge.s.y >= vertex.y and edge.t.y <= vertex.y) or (edge.s.y <= vertex.y and edge.t.y >= vertex.y):
-				xt = ((vertex.y-edge.s.y)/(edge.t.y-edge.s.y))*(edge.t.x-edge.s.x)+edge.s.x
-				if xt < vertex.x and xt < left_edge_xt:
-					# Found it ~!
-					left_edge_xt = xt
-					left_edge = edge
-			#7
+			for v in self.T: # TODO: T should contain only edges, not vertices
+				edge = v.e
+				if (edge.origin.y >= vertex.y and edge.next.origin.y <= vertex.y) \
+						or (edge.origin.y <= vertex.y and edge.next.origin.y >= vertex.y):
+					xt = ((vertex.y-edge.origin.y)/(edge.next.origin.y-edge.origin.y)) \
+							*(edge.next.origin.x-edge.origin.x)+edge.origin.x
+					if xt < vertex.x and xt < left_edge_xt:
+						# Found it ~!
+						left_edge_xt = xt
+						left_edge = edge
+			#7: 'if helper(e_j) is a merge vertex'
 			if self._vertex_type(left_edge) == "merge":
-				#8
-				self.D += [Edge(i_vertex, self._helper(left_edge), None)]
-			#9
-			left_edge.h = i_vertex
+				#8: 'then Insert the diagonal connecting v_i to helper(e_j) in D'
+				self.D.insert(vertex, left_edge.helper)
+			#9: 'helper(e_j) = v_i'
+			left_edge.helper = vertex
 
 	def _recursive_untangle(self, diag = None):
 		r = []
@@ -544,42 +561,29 @@ class TriangleSweep:
 		self.l.debug("Input (Polygon): %s", self.t.polygon)
 		self.l.debug("Input (Holes): %s", self.t.holes)
 
+		# These are iterative arrays
 		self.vertices = self.t.polygon
+		# These are status objects
+		self.T = []
+		self.D = DCEL(self.vertices)
 		# TODO: add handling for holes
 
-		self.edges = []	# Currently incorrect
-		for i_vertex in range(0, len(self.vertices)):
-			if i_vertex is not len(self.vertices)-1:
-				e = Edge(self.vertices[i_vertex], self.vertices[i_vertex+1], None)
-				e.s.n = e.t
-				e.t.p = e.s
-				self.edges += [e]
-			else:
-				e = Edge(self.vertices[i_vertex], self.vertices[0], None)
-				e.s.n = e.t
-				e.t.p = e.s
-				self.edges += [e]
-
 		self.l.info("Vertices: %s", self.vertices)
-		self.l.info("Edges: %s", self.edges)
+		#self.l.info("Edges: %s", self.edges)
 
-		self.q = self._q(range(0, len(self.vertices)))
+		self.q = self._q(vertices)
 		self.l.info("Priority Queue (LIFO): %s", self.q)
 
-		# These are status objects
-		# They lack the correct data structures,
-		# because they are in Python
-		self.T = []
-		self.D = []
+		
 
 		# Here starts step 3
 		while self.q:
-			i_vertex = self.q.pop()
-			self._handle(i_vertex)
+			vertex = self.q.pop()
+			self._handle(vertex)
 
 		self.l.info("Done partition shape in y-monotone subsets ...")
 		self.l.info("T: {}".format(self.T))
-		self.l.info("D: {}".format(self.D))
+		#self.l.info("D (actually self.edges): {}".format(self.edges))
 
 		# now for the monotone handling ...
 		self.monotones = []
@@ -626,10 +630,10 @@ if __name__ == '__main__':
 	vertices = Vertex.tuples_to_vertices(tuples)
 	t = Triangulation(vertices)
 	
-	D = DCEL(vertices)
-	D.insert(vertices[1], vertices[3])
-	D.insert(vertices[5], vertices[7])
-	screen = vis.open_window()
-	vis.draw_DCEL(screen, D, msg="__main__ test")
+#	D = DCEL(vertices)
+#	D.insert(vertices[1], vertices[3])
+#	D.insert(vertices[5], vertices[7])
+#	screen = vis.open_window()
+#	vis.draw_DCEL(screen, D, msg="__main__ test")
 	
-#	TriangleSweep.triangulate(t)
+	TriangleSweep.triangulate(t)
