@@ -360,7 +360,7 @@ class TriangleSweep:
 		#1: 'if helper(e_i-1) is a merge vertex'
 		if self._vertex_type(vertex.prev()) == "merge":
 			#2: 'then Insert the diagonal connecting v_i to helper(e_i-1) in D'
-			self.D.insert(vertex, vertex.prev().help())
+			self.queueD += [(vertex, vertex.prev().help())]
 		#3: 'Delete e_i-1 from T'
 		self.T.remove(vertex.prev())
 
@@ -379,7 +379,7 @@ class TriangleSweep:
 					left_edge_xt = xt
 					left_edge = edge
 		#2: 'Insert the diagonal connecting v_i to helper(e_j) in D'
-		self.D.insert(vertex, left_edge.helper)
+		self.queueD += [(vertex, left_edge.helper)]
 		#3: 'helper(e_j) = v_i'
 		left_edge.elperh = vertex
 		#4: 'Insert e_i in T and set helper(e_i) to v_i'
@@ -390,7 +390,7 @@ class TriangleSweep:
 		#1: 'if helper(e_i-1) is a merge vertex'
 		if self._vertex_type(vertex.prev().help()) == "merge":
 			#2: 'then Insert the diagonal connecting v_i to helper(e_i-1) in D'
-			self.D.insert(vertex, vertex.prev().help())
+			self.queueD += [(vertex, vertex.prev().help())]
 		#3: 'Delete e_i-1 from T'
 		self.T.remove(vertex.prev())
 		#4: 'Search in T to find the edge e_j directly left of v_i'
@@ -409,7 +409,7 @@ class TriangleSweep:
 		#5: 'if helper(e_j) is a merge vertex'
 		if self._vertex_type(left_edge.helper) == "merge":
 			#6: 'then Insert the diagonal connecting v_i to helper(e_j) in D'
-			self.D.insert(vertex, left_edge.helper)
+			self.queueD += [(vertex, left_edge.helper)]
 		#7: 'helper(e_j) = v_i'
 		left_edge.helper = vertex
 
@@ -419,7 +419,7 @@ class TriangleSweep:
 			#2: 'then if helper(e_i-1) is a merge vertex'
 			if self._vertex_type(vertex.prev().help()) == "merge":
 				#3: 'then Insert the diagonal connecting v_i to helper(e_i-1) in D'
-				self.D.insert(vertex, vertex.prev().help())
+				self.queueD += [(vertex, vertex.prev().help())]
 			#4: 'Delete e_i-1 from T'
 			self.T.remove(vertex.prev())
 			#5: 'Insert e_i in T and set helper(e_i) to v_i'
@@ -440,9 +440,9 @@ class TriangleSweep:
 						left_edge_xt = xt
 						left_edge = edge
 			#7: 'if helper(e_j) is a merge vertex'
-			if self._vertex_type(left_edge) == "merge":
+			if self._vertex_type(left_edge.origin) == "merge":
 				#8: 'then Insert the diagonal connecting v_i to helper(e_j) in D'
-				self.D.insert(vertex, left_edge.helper)
+				self.queueD += [(vertex, left_edge.helper)]
 			#9: 'helper(e_j) = v_i'
 			left_edge.helper = vertex
 
@@ -566,15 +566,17 @@ class TriangleSweep:
 		# These are status objects
 		self.T = []
 		self.D = DCEL(self.vertices)
+		self.queueD = []
 		# TODO: add handling for holes
+		
+		for e in self.D.edges:
+			print("E: " + str(e.prev) + " -> " + str(e.origin) + " -> " + str(e.next))
 
 		self.l.info("Vertices: %s", self.vertices)
 		#self.l.info("Edges: %s", self.edges)
 
 		self.q = self._q(vertices)
 		self.l.info("Priority Queue (LIFO): %s", self.q)
-
-		
 
 		# Here starts step 3
 		while self.q:
@@ -583,7 +585,12 @@ class TriangleSweep:
 
 		self.l.info("Done partition shape in y-monotone subsets ...")
 		self.l.info("T: {}".format(self.T))
-		#self.l.info("D (actually self.edges): {}".format(self.edges))
+		self.l.debug("Diagonals to add: {}".format(self.queueD))
+		
+		# update D
+		for queuedItem in self.queueD:
+			self.D.insert(queuedItem[0], queuedItem[1])
+		self.l.debug("self.D has been updated")
 
 		# now for the monotone handling ...
 		self.monotones = []
