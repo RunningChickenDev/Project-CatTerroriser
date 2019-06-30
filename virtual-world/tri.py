@@ -246,29 +246,6 @@ class Vertex:
 	def __repr__(self):
 		return "Vertex({}, {})".format(self.x, self.y)
 
-class Edge:
-	def __init__(self, source, target, helper, idx = -1):
-		self.s = source
-		self.t = target
-		self.h = helper
-		self.idx = idx
-
-	def __getitem__(self, idx):
-		if idx == 0:
-			return self.s
-		elif idx == 1:
-			return self.t
-		elif idx == 2:
-			return self.h
-		else:
-			raise IndexError()
-
-	def __str__(self):
-		return "({} -> {}; help: {})".format(self.s, self.t, self.h)
-
-	def __repr__(self):
-		return "Edge({}, {}, {})".format(self.s, self.t, self.h)
-
 class TriangleSweep:
 	def triangulate(t):
 		r = TriangleSweep(t)
@@ -279,14 +256,6 @@ class TriangleSweep:
 		print(t)
 		self.l = logg.get("TRI")
 		self._l = logg.get("~TRI~")
-
-	def _helper(self, edge):
-		if edge[2]:
-			return edge[2]
-		else:
-			self.l.error("Edge did not have helper! %s", edge)
-			return None
-
 
 	def _vxh(self, p, q):
 		"""
@@ -605,6 +574,8 @@ class TriangleSweep:
 			indices = self.monotone_triangulation(monotone)
 			self.l.debug("Monotone indices: {}".format(indices))
 
+
+#TODO: Delet this
 class Triangulation:
 	"""
 	An instance of this class describes
