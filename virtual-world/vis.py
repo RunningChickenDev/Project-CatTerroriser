@@ -5,13 +5,13 @@ import logg
 from math import sqrt # I don't trust 'import' to load only one thing
 import pygame
 
-def open_window():
+def open_window(size = (640,480)):
 	# initialize the pygame module
 	pygame.init()
 	pygame.display.set_caption('The CatTerroriser')
 	 
 	# create a surface on screen that has the size of 640 x 480
-	screen = pygame.display.set_mode((640,480))
+	screen = pygame.display.set_mode(size)
 	screen.fill([255,255,255])
 	return screen
 
@@ -78,7 +78,7 @@ def _to_screen(vertices, screen, scalar = 100, shrink = 3.72):
 			vr += [[int(v[0])*scalar+w/2,-int(v[1])*scalar+h/2]]
 	return vr
 
-def draw_DCEL(screen, dcel, scalar=100, msg=""):
+def draw_DCEL(screen, dcel, scalar=100, msg="", shrink = 3.72):
 	l = logg.get('VIS')
 	if msg:
 		pygame.display.set_caption('The CatTerroriser: a DCEL (\'{}\')'.format(msg))
@@ -92,9 +92,7 @@ def draw_DCEL(screen, dcel, scalar=100, msg=""):
 	data = dcel.gen_face_data()
 	for f in data["polys"].keys():
 		polygon = data["polys"][f]
-		l.debug("Drawing polygon: %s", polygon)
-		pl = _to_screen(polygon, screen)
-		l.debug("Point list: %s", pl)
+		pl = _to_screen(polygon, screen, scalar, shrink)
 		pygame.draw.polygon(screen, color_wheel[data["colours"][f]], pl, 3)
 	pygame.display.flip()
 	

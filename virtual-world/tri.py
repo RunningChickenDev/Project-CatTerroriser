@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import xml.etree.ElementTree as ET
 from operator import itemgetter
 import logg
 import vis
@@ -82,6 +83,27 @@ class DCEL:
 	Multiple DCELs will have different objects of
 	ConnEdge, as they are different polygons.
 	"""
+	def from_svg(file_path):
+		root = ET.parse(file_path).getroot()
+		print(list(root))
+		print(root.get("height"))
+		print()
+		path = root.find('{http://www.w3.org/2000/svg}g').find('{http://www.w3.org/2000/svg}path')
+		print(path)
+		
+		height = float(root.get("height")[0:-2])
+		width = float(root.get("width")[0:-2])
+		
+		verts = []
+		raw_coords = path.attrib['d'].split()
+		del raw_coords[0]
+		del raw_coords[-1]
+		for raw_coord in raw_coords:
+			vals = raw_coord.split(",")
+			verts += [Vertex(float(vals[0]) - width/2, height-float(vals[1]) - height/2)]
+		
+		return DCEL(verts)
+	
 	def __init__(self, vertices, update_vertices = True):
 		self.faces = 1
 		self.edges = []
@@ -253,9 +275,9 @@ class Vertex:
 		return "Vertex({}, {})".format(self.x, self.y)
 
 class TriangleSweep:
-	def triangulate(dcel):
+	def triangulate(dcel, visualise = False):
 		r = TriangleSweep(dcel)
-		return r.sweep()
+		return r.sweep(visualise)
 
 	def __init__(self, dcel):
 		self.D = dcel
@@ -318,7 +340,7 @@ class TriangleSweep:
 	def _handle(self, vertex):
 		t = self._vertex_type(vertex)
 
-		self.l.debug("Handling\t%-10s%-10s", str(vertex), t)
+		self.l.debug("Handling\t%-52s%-18s", str(vertex), t)
 
 		m = getattr(self, "_handle_"+t)
 		m(vertex)
@@ -353,7 +375,7 @@ class TriangleSweep:
 		#2: 'Insert the diagonal connecting v_i to helper(e_j) in D'
 		self.queueD += [(vertex, left_edge.helper)]
 		#3: 'helper(e_j) = v_i'
-		left_edge.elperh = vertex
+		left_edge.helper = vertex
 		#4: 'Insert e_i in T and set helper(e_i) to v_i'
 		self.T += [vertex]
 		vertex.e.helper = vertex
@@ -412,7 +434,7 @@ class TriangleSweep:
 						left_edge_xt = xt
 						left_edge = edge
 			#7: 'if helper(e_j) is a merge vertex'
-			if self._vertex_type(left_edge.origin) == "merge":
+			if self._vertex_type(left_edge.helper) == "merge":
 				#8: 'then Insert the diagonal connecting v_i to helper(e_j) in D'
 				self.queueD += [(vertex, left_edge.helper)]
 			#9: 'helper(e_j) = v_i'
@@ -438,9 +460,6 @@ class TriangleSweep:
 			uj = q.pop()
 			#4: 'do if u_j and the vertex on top of S are on different chains'
 			
-			self._l.debug(self._chain(D, S[-1]))
-			self._l.debug(self._chain(D, uj))
-			
 			if self._chain(D, S[-1]) != self._chain(D, uj):
 				#5: 'Pop all vertices from S'
 				while len(S) > 1:
@@ -459,11 +478,10 @@ class TriangleSweep:
 				#	the last vertex that has been popped back onto S.'
 				try:
 					while self._chain(D, uj) != _sld(S[-1], uj, p, sign = True):
-						print("{}, {}".format(self._chain(D, uj), _sld(S[-1], uj, p, sign = True)))
 						p = S.pop()
 						r += [(uj, p)]
 				except IndexError:
-					self._l.debug("IndexError ignored (safe)")
+					pass
 				S += [p]
 				#10: 'Push u_j onto S'
 				S += [uj]
@@ -503,14 +521,15 @@ class TriangleSweep:
 		while self.q:
 			vertex = self.q.pop()
 			self._handle(vertex)
+			self.l.info("T: {}".format(self.T))
 
 		self.l.info("Done partition shape in y-monotone subsets ...")
 		self.l.info("T: {}".format(self.T))
 		self.l.debug("Diagonals to add: {}".format(self.queueD))
 
 		if visualise:
-			screen = vis.open_window()
-			vis.draw_DCEL(screen, self.D)
+			screen = vis.open_window(size = (1280,720))
+			vis.draw_DCEL(screen, self.D, scalar = 2, shrink = 5.72)
 
 		# update D
 		for queuedItem in self.queueD:
@@ -522,7 +541,11 @@ class TriangleSweep:
 		self.monotones = []
 		for polydex in data["polys"]:
 			self.monotones += [ data["polys"][polydex] ]
-		self.l.info("Monotones: {}".format(self.monotones))
+		self.l.info("Monotone count: {}".format(len(self.monotones)))
+
+		if visualise:
+			screen = vis.open_window(size = (1280,720))
+			vis.draw_DCEL(screen, self.D, scalar = 2, shrink = 5.72)
 
 		# per monotone ...
 		for monotone in self.monotones:
@@ -530,20 +553,20 @@ class TriangleSweep:
 			self._l.info("Monotone returned {}".format(qd))
 			for qi in qd:
 				self.D.insert(qi[0], qi[1])
-
-		if visualise:
-			screen = vis.open_window()
-			vis.draw_DCEL(screen, self.D)
 	
 		return self.D
 
 if __name__ == '__main__':
-	tuples = [(-1,-2),(0,-1),(1,-2),(2,0),(1,2),(0,1),(-1,2),(-2,0)]
-	dcel_polygon = DCEL(Vertex.tuples_to_vertices(tuples))
-	dcel_output = TriangleSweep.triangulate(dcel_polygon)
+	file_path = "/home/borgert/Pictures/polygons/drawing.svg"
+	dcel_input = DCEL.from_svg(file_path)
+
+	#tuples = [(-1,-2),(0,-1),(1,-2),(2,0),(1,2),(0,1),(-1,2),(-2,0)]
+	#dcel_polygon = DCEL(Vertex.tuples_to_vertices(tuples))
+	dcel_output = TriangleSweep.triangulate(dcel_input, visualise = True)
 
 	# check if there is a correct output!
-	screen = vis.open_window()
-	vis.draw_DCEL(screen, dcel_output)
+	screen = vis.open_window(size = (1280,720))
+	#vis.draw_DCEL(screen, dcel_input, scalar = 1.7)
+	vis.draw_DCEL(screen, dcel_output, scalar = 2.2, shrink = 5.72)
 
 
