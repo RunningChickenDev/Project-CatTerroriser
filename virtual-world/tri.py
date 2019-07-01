@@ -4,7 +4,7 @@ from operator import itemgetter
 import logg
 import vis
 
-def _sld(a, b, p):
+def _sld(a, b, p, sign = False):
 	"""
 	Returns the distance from line AB to point P.
 
@@ -31,7 +31,12 @@ def _sld(a, b, p):
 	A─────────>>B        ┘
 
 	"""
-	return (p[0] - b[0])*(a[1] - b[1]) - (p[1] - b[1])*(a[0] - b[0])
+	r = (p[0] - b[0])*(a[1] - b[1]) - (p[1] - b[1])*(a[0] - b[0])
+	if sign:
+		if r > 0:	return +1
+		if r < 0:	return -1
+	else:
+		return r
 
 class ConnEdge:
 	"""
@@ -58,6 +63,9 @@ class ConnEdge:
 
 	def __repr__(self):
 		return str(self)
+		
+	def copy(self):
+		return ConnEdge(self.origin, self.face, self.twin, self.prev, self.next, self.helper)
 
 class DCEL:
 	"""
@@ -135,15 +143,6 @@ class DCEL:
 		self.faces += 1
 		return self.faces - 1
 
-	def _march_face_data(self, e0):
-		self._Sf += [e0.face]
-		e = e0.next
-		while e is not e0:
-			if e.twin != None:
-				if not self.Sf.contains(e.twin.face):
-					self._march_face_data(e)
-
-
 	def gen_face_data(self, q=["faces","colours"]):
 		l = logg.get("DCEL")
 		data = {}
@@ -189,6 +188,13 @@ class DCEL:
 					data["colours"][face] = potentialis[c % len(potentialis)]
 					c+=1
 		return data
+
+	def get_vertices(self):
+		r = []
+		for edge in self.edges:
+			if not edge.origin in r:
+				r += [edge.origin]
+		return r
 
 	def __str__(self):
 		return "A DCEL containing: {}".format(self.edges)
@@ -247,13 +253,12 @@ class Vertex:
 		return "Vertex({}, {})".format(self.x, self.y)
 
 class TriangleSweep:
-	def triangulate(t):
-		r = TriangleSweep(t)
-		r.sweep()
+	def triangulate(dcel):
+		r = TriangleSweep(dcel)
+		return r.sweep()
 
-	def __init__(self, t):
-		self.t = t
-		print(t)
+	def __init__(self, dcel):
+		self.D = dcel
 		self.l = logg.get("TRI")
 		self._l = logg.get("~TRI~")
 
@@ -279,7 +284,6 @@ class TriangleSweep:
 
 		"""
 		q = []
-		_l = logg.get("~TRI~")
 
 		for vertex in vertices:
 			if not q:
@@ -292,7 +296,6 @@ class TriangleSweep:
 						inserted = True
 				if not inserted:
 					q += [vertex]
-			_l.debug("partial q: %s" , q)
 
 		return q
 
@@ -415,136 +418,85 @@ class TriangleSweep:
 			#9: 'helper(e_j) = v_i'
 			left_edge.helper = vertex
 
-	def _recursive_untangle(self, diag = None):
+	def _monotone_triangulation(self, vertices):
+		if len(vertices) == 3:
+			return []
+	
+		D = DCEL(vertices)
 		r = []
-		first = 0						if diag == None else min(diag.s, diag.t)
-		last = (len(self.vertices)-1)	if diag == None else max(diag.s, diag.t)
+	
+		#1: 'Merge the vertices on the left chain and the vertices on the right chain of P
+		#	into one sequence, sorted on decreasing y-coordinate. If two vertices have
+		#	the same y-coordinate, then the leftmost one comes first.'
+		q = self._q(vertices)
+		self._l.debug("Monotone queue: {}".format(q))
+		#2: 'Initialize an empty stack S, and push u_1 and u_2 onto it'
+		S = [q.pop(), q.pop()]
+		#3: 'for j=3 to n−1'
+		uj_prev = S[1]
+		while len(q) > 1:
+			uj = q.pop()
+			#4: 'do if u_j and the vertex on top of S are on different chains'
+			
+			self._l.debug(self._chain(D, S[-1]))
+			self._l.debug(self._chain(D, uj))
+			
+			if self._chain(D, S[-1]) != self._chain(D, uj):
+				#5: 'Pop all vertices from S'
+				while len(S) > 1:
+					p = S.pop()
+					#6: 'Insert into D a diagonal from u_j to each popped vertex, except the last one'
+					r += [(uj, p)]
+				S.pop()	# the last one
+				#7: 'Push u_j−1 and u_j onto S
+				S += [uj_prev]
+				S += [uj]
+			#8: 'else pop one vertex from S'
+			else:
+				p = S.pop()
+				#9: 'Pop the other vertices from S as long as the diagonals from
+				#	u_j to them are inside P. Insert these diagonals intoD. Push
+				#	the last vertex that has been popped back onto S.'
+				try:
+					while self._chain(D, uj) != _sld(S[-1], uj, p, sign = True):
+						print("{}, {}".format(self._chain(D, uj), _sld(S[-1], uj, p, sign = True)))
+						p = S.pop()
+						r += [(uj, p)]
+				except IndexError:
+					self._l.debug("IndexError ignored (safe)")
+				S += [p]
+				#10: 'Push u_j onto S'
+				S += [uj]
+			uj_prev = uj
+		#11: 'Add diagonals from u_n to all stack vertices except the first and the last one'
+		del S[0]
+		del S[-1]
+		un = q[-1]
+		for s in S:
+			r += [(un, s)]
+		return r
 
-		just_returned = False
-		i_vertex = first
-		while i_vertex < last:
-			just_returned = False
-			for ddiag in self.D:
-				if not just_returned:
-					r += [i_vertex]
-				else:
-					continue
-				if ddiag == diag:
-					i_vertex += 1
-					continue
-				if i_vertex == min(ddiag.s, ddiag.t):
-					self._recursive_untangle(ddiag)
-					i_vertex = max(ddiag.s, ddiag.t)
-					just_returned = True
-					self._l.debug("returned to {}".format(i_vertex))
-				else:
-					i_vertex += 1
-		r += [last]
-		self.monotones += [r]
-		self._l.debug("one recursion done: {}".format(r))
-
-	def _chain(self, monotone, j):
+	def _chain(self, dcel, vert):
 		"""
 		+1 for the Left chain;
 		-1 for the Right chain;
 		"""
-		if self._vxh(self.vertices[j-1], self.vertices[j]):
+		if self._vxh(vert.prev(), vert):
 			return +1
 		else:
 			return -1
 
-	def monotone_triangulation(self, monotone):
-		"""
-		This function is a clusterfuck.
-		It triangulates a monotone polygon
-		"""
-		# In case to monotone is incorrect
-		if len(monotone) < 3:
-			raise IndexError("A monotone piece must contain at least three vertices!")
-		# In case the monotone is a triangle
-		if len(monotone) == 3:
-			if _sld(self.vertices[monotone[0]], self.vertices[monotone[1]], self.vertices[monotone[2]]) > 0:
-				# An anti-clockwise winding triangle
-				return [[monotone[0], monotone[1], monotone[2]]]
-			else:
-				# Clockwise triangle
-				return [[monotone[0], monotone[2], monotone[1]]]
-
-		# init status objects
-		D = []
-		indices = []
-
-		# Up-To-Down Queue
-		q = self._q(monotone)
-		self.l.debug("Monotone priority queue: {}".format(q))
-
-		S = [0,1]
-		for j in range(2,len(monotone)-1):
-			self._l.debug("j = %d", j)
-			if self._chain(monotone, q[-j-1]) != self._chain(monotone, q[-S[-1]-1]):
-				self._l.debug("Non-chain; Current stack: {}".format(S))
-				while len(S) > 1:
-					p = S.pop()
-					D += [Edge(q[-j-1], q[-p-1], None)]
-					if self._chain(monotone, q[-j-1]) > 0:
-						indices += [[ q[-j-1], q[-p-1], q[-S[-1]-1] ]]
-					else:
-						indices += [[ q[-j-1], q[-S[-1]-1], q[-p-1] ]]
-				S.pop()
-				S += [j-1]
-				S += [j]
-			else:
-				self._l.debug("Same chain; Current stack: {}".format(S))
-				l = S.pop()
-				k = S[-1]
-				self._l.debug("j: %d; k: %d; l: %d", j,k,l)
-				self._l.debug("q[j]: %d; q[k]: %d; q[l]: %d", q[-j-1],q[-k-1],q[-l-1])
-
-				triwind = _sld(self.vertices[q[-j-1]],self.vertices[q[-k-1]],self.vertices[q[-l-1]]) > 0
-				chain = self._chain(monotone, q[-j-1]) > 0
-
-				self._l.debug("Triwind: %d; Chain: %d", triwind, chain)
-
-				while S and triwind == chain:
-					l = k
-					k = S[-1]
-					triwind = _sld(self.vertices[q[-j-1]],self.vertices[q[-k-1]],self.vertices[q[-l-1]]) > 0
-					S.pop()
-					D += [Edge(q[-j-1], q[-k-1], None)]
-					if self._chain(monotone, q[-j-1]) > 0:
-						indices += [[ q[-j-1], q[-l-1], q[-k-1] ]]
-					else:
-						indices += [[ q[-j-1], q[-k-1], q[-l-1] ]]
-					self._l.debug(".D %s", D)
-				S += [l]
-				S += [j]
-		self._l.debug("Remainder S: %s", S)
-		for us in S[1:-1]:
-			D += [Edge(q[-len(monotone)], q[-us-1], None)]
-		self._l.debug("D: %s", D)
-
-		self._l.debug("Indices: %s", indices)
-		return indices
-
-	def sweep(self):
-		self.l.debug("Input (Polygon): %s", self.t.polygon)
-		self.l.debug("Input (Holes): %s", self.t.holes)
-
+	def sweep(self, visualise = False):
 		# These are iterative arrays
-		self.vertices = self.t.polygon
+		self.vertices = self.D.get_vertices()
+		print(self.vertices)
 		# These are status objects
 		self.T = []
-		self.D = DCEL(self.vertices)
+		#self.D exists
 		self.queueD = []
 		# TODO: add handling for holes
 
-		for e in self.D.edges:
-			print("E: " + str(e.prev) + " -> " + str(e.origin) + " -> " + str(e.next))
-
-		self.l.info("Vertices: %s", self.vertices)
-		#self.l.info("Edges: %s", self.edges)
-
-		self.q = self._q(vertices)
+		self.q = self._q(self.vertices)
 		self.l.info("Priority Queue (LIFO): %s", self.q)
 
 		# Here starts step 3
@@ -556,62 +508,42 @@ class TriangleSweep:
 		self.l.info("T: {}".format(self.T))
 		self.l.debug("Diagonals to add: {}".format(self.queueD))
 
+		if visualise:
+			screen = vis.open_window()
+			vis.draw_DCEL(screen, self.D)
+
 		# update D
 		for queuedItem in self.queueD:
 			self.D.insert(queuedItem[0], queuedItem[1])
 		self.l.debug("self.D has been updated")
 
 		# now for the monotone handling ...
+		data = self.D.gen_face_data(q=["faces"])
 		self.monotones = []
-		self._recursive_untangle()
+		for polydex in data["polys"]:
+			self.monotones += [ data["polys"][polydex] ]
 		self.l.info("Monotones: {}".format(self.monotones))
 
 		# per monotone ...
-		self.indices = []
 		for monotone in self.monotones:
-			self.indices += self.monotone_triangulation(monotone)
-			self.l.debug("All indices: {}".format(self.indices))
-			indices = self.monotone_triangulation(monotone)
-			self.l.debug("Monotone indices: {}".format(indices))
+			qd = self._monotone_triangulation(monotone)
+			self._l.info("Monotone returned {}".format(qd))
+			for qi in qd:
+				self.D.insert(qi[0], qi[1])
 
-
-#TODO: Delet this
-class Triangulation:
-	"""
-	An instance of this class describes
-	the outcome of the triangulation algorithm.
-
-	The class has functions to create
-	triangulation instances.
-	"""
-
-	###########
-	# HELPERS #
-	###########
-
-	#############
-	#  HANDLES  #
-	#############
-
-	###########
-	# METHODS #
-	###########
-
-	def __init__(self, polygon=[], holes=[[]], vertices=[], indices=[]):
-		self.polygon = polygon
-		self.holes = holes
-		self.vertices = vertices
-		self.indices = indices
+		if visualise:
+			screen = vis.open_window()
+			vis.draw_DCEL(screen, self.D)
+	
+		return self.D
 
 if __name__ == '__main__':
 	tuples = [(-1,-2),(0,-1),(1,-2),(2,0),(1,2),(0,1),(-1,2),(-2,0)]
-	vertices = Vertex.tuples_to_vertices(tuples)
-	t = Triangulation(vertices)
+	dcel_polygon = DCEL(Vertex.tuples_to_vertices(tuples))
+	dcel_output = TriangleSweep.triangulate(dcel_polygon)
 
-#	D = DCEL(vertices)
-#	D.insert(vertices[1], vertices[3])
-#	D.insert(vertices[5], vertices[7])
-#	screen = vis.open_window()
-#	vis.draw_DCEL(screen, D, msg="__main__ test")
+	# check if there is a correct output!
+	screen = vis.open_window()
+	vis.draw_DCEL(screen, dcel_output)
 
-	TriangleSweep.triangulate(t)
+
